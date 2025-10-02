@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Busca CEP - Completo</title>
+
+  <!-- Materialize + Icons -->
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css" rel="stylesheet">
+
+  <style>
+    body { background:#f5f7fa; }
+    header { margin-bottom: 18px; }
+    .container { max-width: 980px; }
+    #resultado-rua { margin-top: 12px; }
+    .logs-item { font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+
+  <nav class="blue lighten-1" role="navigation">
+    <div class="nav-wrapper container">
+      <a id="logo-container" href="#" class="brand-logo">BuscaCEP</a>
+      <a href="#" data-target="mobile-nav" class="sidenav-trigger right"><i class="material-icons">menu</i></a>
+      <ul class="right hide-on-med-and-down">
+        <li><a href="#cepTab">CEP</a></li>
+        <li><a href="#ruaTab">Rua</a></li>
+        <li><a href="#logsTab">Logs</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <ul class="sidenav" id="mobile-nav">
+    <li><a href="#cepTab">CEP</a></li>
+    <li><a href="#ruaTab">Rua</a></li>
+    <li><a href="#logsTab">Logs</a></li>
+  </ul>
+
+  <div class="container section">
+    <div class="row">
+      <div class="col s12">
+        <ul class="tabs">
+          <li class="tab col s4"><a class="active" href="#cepTab">CEP</a></li>
+          <li class="tab col s4"><a href="#ruaTab">RUA</a></li>
+          <li class="tab col s4"><a href="#logsTab">LOGS</a></li>
+        </ul>
+      </div>
+
+      <!-- === ABA CEP === -->
+      <div id="cepTab" class="col s12">
+        <div class="row">
+          <div class="input-field col s6 m4">
+            <input id="cep" type="text" maxlength="9" placeholder="Ex: 01001-000">
+            <label for="cep">CEP</label>
+          </div>
+
+          <div class="col s6 m8" style="padding-top:18px">
+            <a id="btnFetch" class="waves-effect waves-light btn"><i class="material-icons left">search</i>Buscar (fetch)</a>
+            <a id="btnAjax" class="waves-effect waves-light btn"><i class="material-icons left">search</i>Buscar (AJAX)</a>
+            <a id="btnAxios" class="waves-effect waves-light btn"><i class="material-icons left">search</i>Buscar (Axios)</a>
+            <span style="margin-left:12px;color:#666;font-size:0.9rem">(ou saia do campo CEP para auto pesquisar)</span>
+          </div>
+        </div>
+
+        <!-- Campos que serão preenchidos automaticamente -->
+        <div class="row">
+          <div class="input-field col s12 m6">
+            <input id="ruaInput" type="text">
+            <label for="ruaInput">Rua / Logradouro</label>
+          </div>
+          <div class="input-field col s12 m6">
+            <input id="bairroInput" type="text">
+            <label for="bairroInput">Bairro</label>
+          </div>
+          <div class="input-field col s12 m6">
+            <input id="cidadeInput" type="text">
+            <label for="cidadeInput">Cidade</label>
+          </div>
+          <div class="input-field col s12 m6">
+            <input id="estadoInput" type="text">
+            <label for="estadoInput">Estado (UF)</label>
+          </div>
+        </div>
+
+        <!-- Visual rápido -->
+        <ul class="collection">
+          <li class="collection-item">RUA: <strong id="dadoRua"></strong></li>
+          <li class="collection-item">BAIRRO: <strong id="dadoBairro"></strong></li>
+          <li class="collection-item">CIDADE: <strong id="dadoCidade"></strong></li>
+          <li class="collection-item">ESTADO: <strong id="dadoEstado"></strong></li>
+        </ul>
+      </div>
+
+      <!-- === ABA RUA (busca por logradouro) === -->
+      <div id="ruaTab" class="col s12">
+        <div class="row">
+          <div class="input-field col s12 m4">
+            <select id="estadoSelect">
+              <option value="">Carregando estados...</option>
+            </select>
+            <label>Estado (UF)</label>
+          </div>
+
+          <div class="input-field col s12 m4">
+            <select id="municipioSelect">
+              <option value="">Selecione o município</option>
+            </select>
+            <label>Município</label>
+          </div>
+
+          <div class="input-field col s12 m4">
+            <input id="ruaSearch" type="text">
+            <label for="ruaSearch">Rua / Logradouro</label>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="col s12">
+            <a id="btnBuscaRua" class="waves-effect waves-light btn"><i class="material-icons left">search</i>Buscar Rua</a>
+          </div>
+        </div>
+
+        <div id="resultado-rua"></div>
+      </div>
+
+      <!-- === ABA LOGS === -->
+      <div id="logsTab" class="col s12">
+        <h5>Logs de consulta</h5>
+        <ul id="logs" class="collection"></ul>
+        <a id="clearLogs" class="red-text" style="cursor:pointer">Limpar logs</a>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- libs -->
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+
+  <script>
+    // --- Variáveis globais ---
+    let estadosPromise; // promise para os estados (evita corrida)
+    const stateSiglaToId = {}; // mapa sigla -> id do IBGE
+    const LOGS_KEY = 'buscaCepLogs_v1';
+
+    // ---------- Inicialização ----------
+    document.addEventListener('DOMContentLoaded', () => {
+      // components Materialize
+      M.Sidenav.init(document.querySelectorAll('.sidenav'));
+      M.Tabs.init(document.querySelectorAll('.tabs'));
+      M.AutoInit(); // init selects etc (será re-inicializado após carregar opções)
+
+      // listeners
+      document.getElementById('btnFetch').addEventListener('click', buscaCepFetch);
+      document.getElementById('btnAjax').addEventListener('click', buscaCepAjax);
+      document.getElementById('btnAxios').addEventListener('click', buscaCepAxios);
+      document.getElementById('cep').addEventListener('blur', onCepBlur);
+
+      document.getElementById('estadoSelect').addEventListener('change', onEstadoChange);
+      document.getElementById('btnBuscaRua').addEventListener('click', buscarPorRua);
+      document.getElementById('clearLogs').addEventListener('click', () => {
+        localStorage.removeItem(LOGS_KEY);
+        renderLogs();
+      });
+
+      // carregar estados (IBGE) - guardamos a promise
+      estadosPromise = carregarEstados();
+
+      // carrega logs do localStorage
+      renderLogs();
+    });
+
+    // ---------- UTIL ----------
+    function toast(msg, time = 3000) {
+      M.toast({html: msg, displayLength: time});
+    }
+
+    function getCepDigits() {
+      return (document.getElementById('cep').value || '').replace(/\D/g, '');
+    }
+
+    function setAddressFields(data) {
+      document.getElementById('ruaInput').value = data.logradouro || '';
+      document.getElementById('bairroInput').value = data.bairro || '';
+      document.getElementById('cidadeInput').value = data.localidade || '';
+      document.getElementById('estadoInput').value = data.uf || '';
+
+      // também atualiza os displays rápidos
+      document.getElementById('dadoRua').innerText = data.logradouro || '';
+      document.getElementById('dadoBairro').innerText = data.bairro || '';
+      document.getElementById('dadoCidade').innerText = data.localidade || '';
+      document.getElementById('dadoEstado').innerText = data.uf || '';
+
+      // atualiza labels (Materialize)
+      M.updateTextFields();
+    }
+
+    function addLog(type, query, info) {
+      const logs = JSON.parse(localStorage.getItem(LOGS_KEY) || '[]');
+      logs.unshift({ts: new Date().toISOString(), type, query, info});
+      localStorage.setItem(LOGS_KEY, JSON.stringify(logs));
+      renderLogs();
+    }
+
+    function renderLogs() {
+      const ul = document.getElementById('logs');
+      ul.innerHTML = '';
+      const logs = JSON.parse(localStorage.getItem(LOGS_KEY) || '[]');
+      if (!logs.length) {
+        ul.innerHTML = '<li class="collection-item">Nenhuma consulta ainda</li>';
+        return;
+      }
+      logs.forEach(l => {
+        const li = document.createElement('li');
+        li.className = 'collection-item logs-item';
+        li.innerText = `${new Date(l.ts).toLocaleString()} — ${l.type}: ${l.query} — ${l.info}`;
+        ul.appendChild(li);
+      });
+    }
+
+    // ---------- Evento blur do CEP (auto buscar) ----------
+    function onCepBlur() {
+      const cep = getCepDigits();
+      if (cep.length === 8) {
+        // chamada automática (usamos fetch)
+        buscaCepFetch();
+      }
+    }
+
+    // ---------- BUSCAS POR CEP ----------
+    // 1) Fetch (async/await)
+    async function buscaCepFetch() {
+      const cep = getCepDigits();
+      if (cep.length !== 8) { toast('Informe um CEP com 8 dígitos'); return; }
+
+      try {
+        const res = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+        const data = await res.json();
+        if (data.erro) {
+          toast('CEP não encontrado');
+          addLog('CEP', cep, 'não encontrado');
+          return;
+        }
+        setAddressFields(data);
+        toast('CEP encontrado (fetch)');
+        addLog('CEP', cep, 'ok');
+
+        // tenta selecionar estado e município nas selects da aba RUA
+        await estadosPromise;
+        await setSelectedStateAndMunicipio(data.uf, data.localidade);
+
+      } catch (err) {
+        console.error(err);
+        toast('Erro na consulta (fetch)');
+        addLog('CEP', cep, 'erro');
+      }
+    }
+
+    // 2) jQuery AJAX
+    function buscaCepAjax() {
+      const cep = getCepDigits();
+      if (cep.length !== 8) { toast('Informe um CEP com 8 dígitos'); return; }
+
+      $.ajax({
+        url: `https://viacep.com.br/ws/${cep}/json/`,
+        method: 'GET',
+        success: async function(data) {
+          if (data.erro) {
+            toast('CEP não encontrado (AJAX)');
+            addLog('CEP', cep, 'não encontrado (ajax)');
+            return;
+          }
+          setAddressFields(data);
+          toast('CEP encontrado (AJAX)');
+          addLog('CEP', cep, 'ok (ajax)');
+
+          await estadosPromise;
+          await setSelectedStateAndMunicipio(data.uf, data.localidade);
+        },
+        error: function(xhr, status, err) {
+          console.error(err);
+          toast('Erro na consulta (AJAX)');
+          addLog('CEP', cep, 'erro (ajax)');
+        }
+      });
+    }
+
+    // 3) Axios
+    function buscaCepAxios() {
+      const cep = getCepDigits();
+      if (cep.length !== 8) { toast('Informe um CEP com 8 dígitos'); return; }
+
+      axios.get(`https://viacep.com.br/ws/${cep}/json/`)
+        .then(async (response) => {
+          const data = response.data;
+          if (data.erro) {
+            toast('CEP não encontrado (Axios)');
+            addLog('CEP', cep, 'não encontrado (axios)');
+            return;
+          }
+          setAddressFields(data);
+          toast('CEP encontrado (Axios)');
+          addLog('CEP', cep, 'ok (axios)');
+
+          await estadosPromise;
+          await setSelectedStateAndMunicipio(data.uf, data.localidade);
+        })
+        .catch(err => {
+          console.error(err);
+          toast('Erro na consulta (Axios)');
+          addLog('CEP', cep, 'erro (axios)');
+        });
+    }
+
+    // ---------- ESTADOS / MUNICÍPIOS (IBGE) ----------
+    async function carregarEstados() {
+      try {
+        const res = await fetch('https://servicodados.ibge.gov.br/api/v1/localidades/estados');
+        const estados = await res.json();
+
+        // ordena por nome
+        estados.sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+
+        const sel = document.getElementById('estadoSelect');
+        sel.innerHTML = '<option value="">Selecione o Estado</option>';
+
+        estados.forEach(e => {
+          const opt = document.createElement('option');
+          opt.value = e.id;                 // id numérico (usado para buscar municípios)
+          opt.dataset.sigla = e.sigla;      // sigla (usada no ViaCEP)
+          opt.textContent = `${e.sigla} - ${e.nome}`;
+          sel.appendChild(opt);
+          // mapa para localizar id a partir da sigla
+          stateSiglaToId[e.sigla] = e.id;
+        });
+
+        // reinit select Materialize
+        M.FormSelect.init(sel);
+        return estados;
+      } catch (err) {
+        console.error('Erro ao carregar estados', err);
+        toast('Erro ao carregar estados (IBGE)');
+        return [];
+      }
+    }
+
+    async function carregarMunicipiosPorEstadoId(estadoId) {
+      const sel = document.getElementById('municipioSelect');
+      sel.innerHTML = '<option value="">Carregando municípios...</option>';
+      M.FormSelect.init(sel);
+
+      try {
+        const res = await fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/estados/${estadoId}/municipios`);
+        const municipios = await res.json();
+        municipios.sort((a,b)=> a.nome.localeCompare(b.nome, 'pt-BR'));
+
+        sel.innerHTML = '<option value="">Selecione o Município</option>';
+        municipios.forEach(m => {
+          const opt = document.createElement('option');
+          opt.value = m.nome;
+          opt.textContent = m.nome;
+          sel.appendChild(opt);
+        });
+        M.FormSelect.init(sel);
+        return municipios;
+      } catch (err) {
+        console.error('Erro ao carregar municípios', err);
+        sel.innerHTML = '<option value="">Erro ao carregar</option>';
+        M.FormSelect.init(sel);
+        return [];
+      }
+    }
+
+    async function onEstadoChange(e) {
+      const opt = e.target.selectedOptions[0];
+      if (!opt) return;
+      const estadoId = opt.value;
+      if (!estadoId) return;
+      await carregarMunicipiosPorEstadoId(estadoId);
+    }
+
+    // seleciona estado pelo UF (sigla) e, quando os municipios carregarem,
+    // tenta selecionar o município que combina com 'cidadeName'
+    async function setSelectedStateAndMunicipio(ufSigla, cidadeName) {
+      if (!ufSigla) return;
+      const select = document.getElementById('estadoSelect');
+
+      // encontra option com dataset.sigla == ufSigla
+      let foundOpt = Array.from(select.options).find(o => o.dataset && o.dataset.sigla === ufSigla);
+      if (!foundOpt) {
+        // se não encontrado e temos mapa sigla->id, tenta usar
+        const id = stateSiglaToId[ufSigla];
+        if (id) {
+          await carregarMunicipiosPorEstadoId(id); // garante municipios carregados
+          // agora tenta selecionar
+          foundOpt = Array.from(select.options).find(o => o.dataset && o.dataset.sigla === ufSigla);
+          if (!foundOpt) return;
+        } else return;
+      }
+
+      // seleciona o option e reinicia select
+      select.value = foundOpt.value;
+      M.FormSelect.init(select);
+
+      // carregar municipios e selecionar o que bate com a cidade (se houver)
+      const estadoId = foundOpt.value;
+      await carregarMunicipiosPorEstadoId(estadoId);
+
+      if (cidadeName) {
+        const municipioSelect = document.getElementById('municipioSelect');
+        // tenta casar com o nome exato
+        const optCidade = Array.from(municipioSelect.options).find(o => o.value.toLowerCase() === cidadeName.toLowerCase());
+        if (optCidade) {
+          municipioSelect.value = optCidade.value;
+          M.FormSelect.init(municipioSelect);
+        }
+      }
+    }
+
+    // ---------- BUSCA POR RUA (ViaCEP) ----------
+    async function buscarPorRua() {
+      const estadoSelect = document.getElementById('estadoSelect');
+      const selOpt = estadoSelect.selectedOptions[0];
+      if (!selOpt || !selOpt.value) { toast('Selecione um estado'); return; }
+      const estadoId = selOpt.value;
+      const ufSigla = selOpt.dataset.sigla;
+      const municipio = document.getElementById('municipioSelect').value;
+      const rua = document.getElementById('ruaSearch').value.trim();
+
+      if (!municipio) { toast('Selecione um município'); return; }
+      if (!rua) { toast('Informe o nome da rua'); return; }
+
+      const url = `https://viacep.com.br/ws/${encodeURIComponent(ufSigla)}/${encodeURIComponent(municipio)}/${encodeURIComponent(rua)}/json/`;
+
+      try {
+        const res = await fetch(url);
+        const dados = await res.json();
+        const div = document.getElementById('resultado-rua');
+
+        if (!dados || dados.length === 0) {
+          div.innerHTML = '<p class="red-text">Nenhum endereço encontrado</p>';
+          addLog('RUA', `${rua} - ${municipio}/${ufSigla}`, '0 resultados');
+          return;
+        }
+
+        let html = '<ul class="collection">';
+        dados.forEach(d => {
+          html += `<li class="collection-item">${d.logradouro} — ${d.bairro} — ${d.localidade}/${d.uf} (CEP: ${d.cep})</li>`;
+        });
+        html += '</ul>';
+        div.innerHTML = html;
+        addLog('RUA', `${rua} - ${municipio}/${ufSigla}`, `${dados.length} resultado(s)`);
+        toast(`${dados.length} resultado(s) encontrados`);
+      } catch (err) {
+        console.error(err);
+        toast('Erro na busca por rua');
+        addLog('RUA', `${rua} - ${municipio}/${ufSigla}`, 'erro');
+      }
+    }
+
+  </script>
+</body>
+</html>
